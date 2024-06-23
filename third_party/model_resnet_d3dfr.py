@@ -510,10 +510,10 @@ class ResNetYoutu3DMM(Module):
         x = self.avgpool(x) # Bx512x1x1
 
         # x = self.bn_o1(x)
-        # x = self.dropout(x) #?????feature?B*2048*4*4???
-        x = x.view(x.size(0), -1) #???????B*input_size?fc???
+        # x = self.dropout(x) #提取特征的feature是B*2048*4*4的维度
+        x = x.view(x.size(0), -1) #将其他维度归为B*input_size做fc层输入
         # print(x.shape)
-        x = self.fc(x) #??output_size B*output_size
+        x = self.fc(x) #输出output_size B*output_size
         # x = self.bn_o2(x)
 
         return x
@@ -728,8 +728,8 @@ class ResNetYoutu101(Module):
         x = self.avgpool(x) # Bx512x1x1
 
         # x = self.bn_o1(x)
-        # x = self.dropout(x) #?????feature?B*2048*4*4???
-        x = x.view(x.size(0), -1) #???????B*input_size?fc???
+        # x = self.dropout(x) #提取特征的feature是B*2048*4*4的维度
+        x = x.view(x.size(0), -1) #将其他维度归为B*input_size做fc层输入
         # print(x.shape)
         if not self.use_last_fc:
             output = []
@@ -737,7 +737,7 @@ class ResNetYoutu101(Module):
                 output.append(layer(x))
             x = torch.flatten(torch.cat(output, dim=1), 1)
 
-        # x = self.fc(x) #??output_size B*output_size
+        # x = self.fc(x) #输出output_size B*output_size
         # x = self.bn_o2(x)
 
         return x
@@ -863,10 +863,10 @@ class ResNetAttention(Module):
         x = self.avgpool(x) # Bx512x1x1
 
         # x = self.bn_o1(x)
-        # x = self.dropout(x) #?????feature?B*2048*4*4???
-        x = x.view(x.size(0), -1) #???????B*input_size?fc???
+        # x = self.dropout(x) #提取特征的feature是B*2048*4*4的维度
+        x = x.view(x.size(0), -1) #将其他维度归为B*input_size做fc层输入
         # print(x.shape)
-        x = self.fc(x) #??output_size B*output_size
+        x = self.fc(x) #输出output_size B*output_size
         # x = self.bn_o2(x)
 
         return x
