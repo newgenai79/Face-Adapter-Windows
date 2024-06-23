@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
 diffusers==0.26.0
 torch==2.0.0
 torchvision==0.15.1
@@ -16,3 +17,4 @@ gradio
 controlnet_aux
 gdown
 peft
+fastai
