@@ -30,7 +30,6 @@ import third_party.model_resnet_d3dfr as model_resnet_d3dfr
 import third_party.d3dfr.bfm as bfm
 import third_party.insightface_backbone_conv as model_insightface_backbone
 
-
 use_cache=False
 
 # global variable
@@ -43,7 +42,6 @@ weight_dtype = torch.float16 if str(device).__contains__("cuda") else torch.floa
 # download checkpoints
 from huggingface_hub import snapshot_download
 snapshot_download(repo_id="FaceAdapter/FaceAdapter", local_dir="./checkpoints")
-
 
 pil2tensor = transforms.Compose([ 
         transforms.ToTensor(), 
@@ -58,11 +56,14 @@ def convert_batch_to_nprgb(batch, nrow):
 
 controlnet = ControlNetModel.from_pretrained('./checkpoints/controlnet', torch_dtype=weight_dtype).to(device)
 
+
+
 pipe = StableDiffusionFaceAdapterPipeline.from_pretrained(
-    'runwayml/stable-diffusion-v1-5', controlnet=controlnet, torch_dtype=weight_dtype, cache_dir='./hub' if use_cache else None, local_files_only=use_cache, requires_safety_checker=False
+   "runwayml/stable-diffusion-v1-5" , controlnet=controlnet, torch_dtype=weight_dtype, cache_dir='./hub' if use_cache else None, local_files_only=use_cache, requires_safety_checker=False
 ).to(device)
 # pretrained unet
 pretrained_unet_path = './checkpoints/pretrained_unet'
+
 if os.path.exists(pretrained_unet_path):
     pipe.unet = UNet2DConditionModel.from_pretrained(pretrained_unet_path, torch_dtype=weight_dtype).to(device)
     
@@ -101,16 +102,44 @@ def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
 def remove_tips():
     return gr.update(visible=False)
 
+def get_example():
+    case = [
+        [
+            "./example/src/altman9.png",
+            "./example/tgt/lecun.jpg",
+        ],
+        [
+            "./example/src/bengio.jpg",
+            "./example/tgt/sheeran.png",
+        ],
+        [
+            "./example/src/emma.jpeg",
+            "./example/tgt/beyonce.jpg",
+        ],
+        [
+            "./example/src/hinton.jpg",
+            "./example/tgt/smith.jpeg",
+        ],
+    ]
+    return case
+
 def run_for_examples(face_file, pose_file):
     return generate_image(
         face_file,
         pose_file,
-        num_steps,
-        guidance_scale,
-        seed,
+        num_steps=25,
+        guidance_scale=5,
+        seed=999,
+        crop_ratio=0.87
     )
 
 
+
+def convert_from_cv2_to_image(img: np.ndarray) -> Image:
+    return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+def convert_from_image_to_cv2(img: Image) -> np.ndarray:
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 def generate_image(
     src_img_path,
     drive_img_path,
@@ -118,14 +147,21 @@ def generate_image(
     guidance_scale,
     seed,
     crop_ratio = 0.81,
+    base_model = "runwayml/stable-diffusion-v1-5",
     progress=gr.Progress(track_tqdm=True),
 ):
-
-    
-    src_im_pil = Image.open(src_img_path).convert("RGB")
-    
+    if 'runwayml' not in base_model:
+        pipe.unet = UNet2DConditionModel.from_pretrained(base_model, subfolder='unet', torch_dtype=weight_dtype).to(device)
+        
     # ===== insightface crop and detect 5pts
+    # face_image = load_image(src_img_path)
+    # face_image = resize_img(face_image, max_side=1024)
+    # src_im_pil = convert_from_image_to_cv2(face_image)
+    # face_info = app.get(src_im_pil)
+
+    src_im_pil = Image.open(src_img_path).convert("RGB")
     face_info = app.get(cv2.cvtColor(np.array(src_im_pil), cv2.COLOR_RGB2BGR))
+    
     face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1] # only use the maximum face
     dets = face_info['bbox']
     
@@ -160,11 +196,12 @@ def generate_image(
     images_src = pil2tensor(src_im_pil).view(1,3,test_image_size,test_image_size).to(device)
     clip_input_src_tensors = clip_image_processor(images=src_im_pil, return_tensors="pt").pixel_values.view(-1, 3, 224, 224).to(device)
     
-    
-    drive_im_pil = Image.open(drive_img_path).convert("RGB")   
-    
+ 
     # ===== insightface crop and detect 5pts
+    drive_im_pil = Image.open(drive_img_path).convert("RGB")
     face_info = app.get(cv2.cvtColor(np.array(drive_im_pil), cv2.COLOR_RGB2BGR))
+    
+    
     face_info = sorted(face_info, key=lambda x:(x['bbox'][2]-x['bbox'][0])*x['bbox'][3]-x['bbox'][1])[-1] # only use the maximum face
     dets = face_info['bbox']
     
@@ -239,10 +276,10 @@ def generate_image(
     
     res_tensor = pil2tensor(image).view(1,3,test_image_size,test_image_size).to(images_tar)
     res_tensor = res_tensor*blend_mask + images_src*(1-blend_mask)
-    ##########  face reenactment  ##########
+    # ##########  face reenactment  ##########
     
-    ##########    face swapping   ########## 
-    accurate_mask_path = './checkpoints/mask/' + drive_img_path.split('.')[0] + '.png'
+    # ##########    face swapping   ########## 
+    accurate_mask_path = './example/tgt/mask/' + drive_img_path.split('/')[-1].split('.')[0] + '.png'
     if os.path.isfile(accurate_mask_path):
         print('use precomputed mask')
         mask_image_loaded = Image.open(accurate_mask_path)
@@ -371,6 +408,22 @@ with gr.Blocks(css=css) as demo:
 
 
             with gr.Accordion(open=False, label="Advanced Options"):
+                base_models = [
+                    "frankjoshua/toonyou_beta6",
+                    'runwayml/stable-diffusion-v1-5'
+                ]
+                base_model = gr.Dropdown(
+                    label="base_model",
+                    choices=base_models,
+                    value="runwayml/stable-diffusion-v1-5",
+                )
+                crop_ratio = gr.Slider(
+                    label="Crop ratio",
+                    minimum=0.7,
+                    maximum=0.9,
+                    step=0.01,
+                    value= 0.87,
+                )
                 num_steps = gr.Slider(
                     label="Number of sample steps",
                     minimum=1,
@@ -431,6 +484,8 @@ with gr.Blocks(css=css) as demo:
                 num_steps,
                 guidance_scale,
                 seed,
+                crop_ratio,
+                base_model
             ],
             outputs=[gallery, usage_tips],
         )
@@ -442,7 +497,16 @@ with gr.Blocks(css=css) as demo:
         #     queue=False,
         # )
 
+    gr.Examples(
+        examples=get_example(),
+        inputs=[face_file, pose_file],
+        fn=run_for_examples,
+        outputs=[gallery, usage_tips],
+        cache_examples=True,
+    )
+
     gr.Markdown(article)
 
 demo.queue(api_open=False)
 demo.launch()
+
